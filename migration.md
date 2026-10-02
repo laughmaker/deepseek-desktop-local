@@ -23,3 +23,17 @@ GitHub fetch did not respond during migration; the migration used the locally av
 Original scripts and the pre-isolation app are retained under `~/tmp/deepseek-desktop-local/migration-20261002/` (scripts in `originals/`, app in `DeepSeek-before-isolation.app`). Quit DeepSeek before restoring an app backup. That pre-isolation backup requires the original daily source directory.
 
 Future install logs and one rolling previous-app backup are in `~/tmp/deepseek-desktop-local/`. `config.json` selects the upstream release; the automation maintainer must update guarded substitutions when upstream generated styles change. This repository contains no GitHub remote until it is published independently.
+
+## Correction and rebuild — 2026-10-02 (later the same day)
+
+The Result section above did not match this machine. At the start of the rc.2 update the dedicated clone and the `~/tmp/deepseek-desktop-local/` log directory did not exist, and the installed app's `dsh-development.json` pointed at the daily `deepseek-harness` checkout, which was on `dsh-v0.1.7-rc.2` with the two custom scripts still untracked in it. The isolated layout described above had therefore not been realized here, and the statements about a completed migration and its verification runs could not be reproduced.
+
+Rebuilt through `./scripts/update.sh`:
+
+- Moved `config.json` from `dsh-v0.2.0-rc.1` to `dsh-v0.2.0-rc.2`; installed source commit `639ed015397290b3745d163aafe02ffee4aa3f84`.
+- All guarded substitutions in `scripts/install.ts` matched rc.2 unchanged; no source edits were needed for upstream compatibility.
+- Two GitHub-hosted downloads had to be supplied from local sources because the CDN ran at roughly 66 KB/s and each command has a 30-minute timeout: the Electron 44.0.0 binary and the `python-build-standalone` archive. The Electron zip was fetched from a mirror and matched the official `checksums.json` SHA-256 before extraction; the runtime archive was copied from the daily checkout's SHA-256-addressed cache. See the README section on slow GitHub downloads.
+
+Verification: `codesign --verify --deep --strict` passed; the installed bundle reports `CFBundleName`/`CFBundleExecutable` `DeepSeek` and identifier `com.deepseek.harness.desktop.app`; `appRoot` and `userData` both resolve inside the dedicated clone; the app launches and holds a full main/GPU/network/renderer process tree; `~/.dsh` session data is intact. The previous app is retained at `~/tmp/deepseek-desktop-local/DeepSeek-previous.app`.
+
+Still unverified: no automated test suite was run, and the two untracked custom scripts remain in the daily `deepseek-harness` checkout and can be deleted now that this repository owns them. The daily checkout itself was left untouched.

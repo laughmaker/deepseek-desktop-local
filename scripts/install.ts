@@ -663,7 +663,15 @@ function installBundle(): void {
   let launcherText = readFileSync(launcher, 'utf8')
   launcherText = launcherText.replaceAll(generatedBundle, installedBundle)
   launcherText = launcherText.replace(/^export DSH_HOME=.*$/m, `export DSH_HOME='${dshHome}'`)
-  launcherText = launcherText.replace(/^export DSH_HOME=.*$/m, `export DSH_HOME='${dshHome}'\nexport DSH_APP_ICON='${join(installedBundle, 'Contents', 'Resources', 'deepseek-dock.png')}'\nexport DSH_DESKTOP_PRIMARY_RUNTIME_DIR='${primaryRuntimeDirectory}'`)
+  launcherText = launcherText.replace(/^export DSH_HOME=.*$/m, `export DSH_HOME='${dshHome}'\nexport DSH_APP_ICON='${join(installedBundle, 'Contents', 'Resources', 'deepseek-dock.png')}'\nexport DSH_DESKTOP_PRIMARY_RUNTIME_DIR='${primaryRuntimeDirectory}'\nexport DSH_DESKTOP_APP='1'`)
+  // Electron refuses to start when NODE_OPTIONS carries --openssl-legacy-provider, and shell
+  // profiles commonly export it globally (VS Code does). Desktop also re-reads the login-shell
+  // environment and lets shell values win, so DSH_DESKTOP_APP is exported here for the user's
+  // shell profile to recognise; the strip below only covers the launcher's own environment.
+  launcherText = launcherText.replace(
+    /^export DSH_DESKTOP_PRIMARY_RUNTIME_DIR=.*$/m,
+    `$&\nNODE_OPTIONS=$(printf '%s' "\${NODE_OPTIONS-}" | sed 's/--openssl-legacy-provider//g')\nexport NODE_OPTIONS`,
+  )
   writeFileSync(launcher, launcherText, { mode: 0o755 })
   renameSync(launcher, installedLauncher)
 
