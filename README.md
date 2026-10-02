@@ -29,7 +29,7 @@ Upstream CSS changes may require maintaining the guarded substitutions in `scrip
 
 ## GitHub
 
-Publish only this repository, preferably as a private personal repository. Do not add the official clone, generated application, dependencies, logs, runtime state, or `~/.dsh`. The project has no upstream DeepSeek push remote by default.
+Public repository: [laughmaker/deepseek-desktop-local](https://github.com/laughmaker/deepseek-desktop-local). Publish only the files in this automation repository. Do not add the official clone, generated application, dependencies, logs, runtime state, or `~/.dsh`. The project has no upstream DeepSeek push remote by default.
 
 ## Changes
 
