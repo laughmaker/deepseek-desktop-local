@@ -252,9 +252,20 @@ body:not([data-ds-dark-theme]) [data-chat-flow-kind="assistant-step"] {
 
 [data-chat-flow-kind="assistant-step"] [data-slot="conversation.chat.node"] > div > div > div:has(> :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table, hr)) {
   color: var(--md-text) !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   line-height: 1.75 !important;
   letter-spacing: .01em;
+}
+
+/* Thinking disclosures wrap a div rather than markdown children, so they miss
+   the rule above, and their label carries its own 11px declaration. Match them
+   on the stable data-variant hook instead of the hashed CSS-module class, and
+   lift the label to 12px so the whole centre column shifts by the same +1. */
+[data-chat-flow-kind="assistant-step"] [data-variant="think"] {
+  font-size: 12px !important;
+}
+[data-chat-flow-kind="assistant-step"] [data-variant="think"] :is([class*="_text"], [class*="_title"]) {
+  font-size: 12px !important;
 }
 
 [data-chat-flow-kind="assistant-step"] :is(h1, h2, h3, h4, h5, h6) {
@@ -268,14 +279,14 @@ body:not([data-ds-dark-theme]) [data-chat-flow-kind="assistant-step"] {
   padding-bottom: .4em;
   border-bottom-color: var(--md-border-strong);
   color: var(--md-heading-1) !important;
-  font-size: calc(1.8rem - 1px) !important;
+  font-size: 1.8rem !important;
   font-weight: 750 !important;
 }
 
 [data-chat-flow-kind="assistant-step"] h2 {
   margin: 1.5em 0 .6em !important;
   color: var(--md-heading-2) !important;
-  font-size: calc(1.4rem - 1px) !important;
+  font-size: 1.4rem !important;
   font-weight: 720 !important;
 }
 
@@ -283,7 +294,7 @@ body:not([data-ds-dark-theme]) [data-chat-flow-kind="assistant-step"] {
   margin: 1.35em 0 .5em !important;
   border-bottom: 0;
   color: var(--md-heading-3) !important;
-  font-size: calc(1.15rem - 1px) !important;
+  font-size: 1.15rem !important;
   font-weight: 700 !important;
 }
 
@@ -406,20 +417,30 @@ const RIGHTBAR_DRAG_HANDLE = `<style id="deepseek-rightbar-drag-handle">
 </style>`
 
 const SIDEBAR_DENSITY_THEME = `<style id="deepseek-sidebar-density-theme">
+/* Light-surface sidebar text scale. The app's own de-emphasised label tokens
+   resolve to bluish-600 (3.58:1) against the light sidebar, which reads as dim.
+   Titles and labels move up to label-primary, and the one step below them
+   (section headings, timestamps, key caps) to label-secondary (5.6:1). Both
+   tokens already flip per theme, so dark mode keeps its existing palette. */
 [role="treeitem"][data-row-key^="workspace:"] [class*="_title"],
 [role="treeitem"][data-row-key^="workspace:"] [class*="projectText"],
 [role="treeitem"][data-row-key^="session:"] [class*="_title"] {
-  color: #c6cacf !important;
+  color: var(--dsw-alias-label-primary) !important;
 }
 
 [class*="sidebarCol"] [class*="newSessionLabel"],
 [class*="sidebarCol"] [class*="panelTitle"],
 [class*="sidebarCol"] [class*="_label"] {
-  color: var(--dsw-alias-label-secondary) !important;
+  color: var(--dsw-alias-label-primary) !important;
 }
 
 [class*="sidebarCol"] [class*="sectionLabel"] {
-  color: var(--dsw-alias-label-caption) !important;
+  color: var(--dsw-alias-label-secondary) !important;
+}
+
+[role="treeitem"][data-row-key^="session:"] [class*="_time"],
+[class*="sidebarCol"] kbd {
+  color: var(--dsw-alias-label-secondary) !important;
 }
 
 [role="treeitem"][data-row-key^="workspace:"] { height: 27.2px !important; }
