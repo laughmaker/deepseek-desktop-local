@@ -447,6 +447,18 @@ const SIDEBAR_DENSITY_THEME = `<style id="deepseek-sidebar-density-theme">
 [role="treeitem"][data-row-key^="session:"] { height: 25.6px !important; }
 [role="treeitem"][data-row-key^="workspace:"] span,
 [role="treeitem"][data-row-key^="session:"] span { line-height: 16px !important; }
+
+/* Dark mode: the app's label tokens resolve to near-white (label-primary #f9fafb,
+   label-secondary #cfd3d6), which reads as glare against the dark sidebar surface.
+   Redefining the two tokens inside the sidebar subtree dims only its text; the centre
+   column, the right panel and the app's own dark palette keep their values. Measured
+   against the dark sidebar surface this takes label-primary from ~16.6:1 to ~11:1 and
+   label-secondary from ~11.5:1 to ~7.3:1, so both stay above WCAG AA. The variable
+   override needs no !important: every rule above resolves through these tokens. */
+body[data-ds-dark-theme] [class*="sidebarCol"] {
+  --dsw-alias-label-primary: #c9ced6;
+  --dsw-alias-label-secondary: #a2a8b0;
+}
 </style>`
 
 const SIDEBAR_LAYOUT_THEME = `<style id="deepseek-sidebar-layout-theme">
@@ -570,6 +582,53 @@ function patchBuiltBrandingAndScale(): void {
     'clampWidth(px, 264, 420)', 'clampWidth(px, 132, 420)', 1,
     'clampWidth(px, 132, 420)',
   )
+  // Cmd+B must reopen the sidebar at the width it was closed with, and that
+  // width must survive a relaunch. Upstream treats the sidebar preference AS its
+  // width, so collapsing zeroes it and every reopen restores SIDEBAR_DEFAULT
+  // (280px), discarding a narrow drag. Local state now carries a `sidebarRestore`
+  // field, and the width is mirrored into localStorage (the same mechanism the
+  // client's own stores use via `persist`), which upstream does not do for
+  // layoutInfo: the store declares no persist key, so the frame otherwise starts
+  // at 280px on every launch. Every anchor below vanishes once patched, keeping a
+  // rerun idempotent.
+  replaceRequired(
+    layoutClient,
+    'function createLayoutStore() {\n\t\t\treturn (0, _deepseek_ai_dsh_client_store.defineStore)({',
+    'function createLayoutStore() {\n'
+      + '\t\t\tconst SIDEBAR_WIDTH_KEY = \'dsh.layout.sidebar-width.v1\';\n'
+      + '\t\t\tconst clampSidebarWidth = (value) => clampWidth(value, 132, 420);\n'
+      + '\t\t\tconst readStoredSidebarWidth = () => {\n'
+      + '\t\t\t\ttry {\n'
+      + '\t\t\t\t\tconst stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));\n'
+      + '\t\t\t\t\treturn Number.isFinite(stored) && stored > 0 ? clampSidebarWidth(stored) : 280;\n'
+      + '\t\t\t\t} catch { return 280; }\n'
+      + '\t\t\t};\n'
+      + '\t\t\tconst storeSidebarWidth = (value) => {\n'
+      + '\t\t\t\tif (!(value > 0)) return;\n'
+      + '\t\t\t\ttry { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(value))); } catch { /* storage unavailable */ }\n'
+      + '\t\t\t};\n'
+      + '\t\t\treturn (0, _deepseek_ai_dsh_client_store.defineStore)({',
+    1,
+  )
+  replaceRequired(
+    layoutClient,
+    'sidebar: 280,\n\t\t\t\t\t\tviewportWidth: window.innerWidth,',
+    'sidebar: readStoredSidebarWidth(),\n\t\t\t\t\t\tsidebarRestore: 280,\n\t\t\t\t\t\tviewportWidth: window.innerWidth,',
+    1,
+  )
+  replaceRequired(
+    layoutClient,
+    'd.layoutInfo.sidebar = clampWidth(px, 132, 420);',
+    'd.layoutInfo.sidebar = clampWidth(px, 132, 420);\n\t\t\t\t\t\tstoreSidebarWidth(d.layoutInfo.sidebar);',
+    1,
+  )
+  replaceRequired(
+    layoutClient,
+    'else d.layoutInfo.sidebar = d.layoutInfo.sidebar === 0 ? 280 : 0;',
+    'else if (d.layoutInfo.sidebar === 0) d.layoutInfo.sidebar = d.layoutInfo.sidebarRestore;\n'
+      + '\t\t\t\t\t\telse { d.layoutInfo.sidebarRestore = d.layoutInfo.sidebar; storeSidebarWidth(d.layoutInfo.sidebar); d.layoutInfo.sidebar = 0; }',
+    1,
+  )
 
   const workspaceClient = join(repositoryRoot, 'packages', 'client', 'ui-workspace', 'lib', 'client.js')
   replaceRequired(
@@ -644,6 +703,73 @@ function patchBuiltBrandingAndScale(): void {
     mainBundle,
     '})) app.whenReady().then(main).catch(',
     "})) app.whenReady().then(() => { if (process.platform === 'darwin' && process.env.DSH_APP_ICON) app.dock?.setIcon(nativeImage.createFromPath(process.env.DSH_APP_ICON)); return main(); }).catch(",
+    1,
+  )
+
+  // The main window is created at a fixed 1280x820 and upstream never records
+  // where it was left, so every launch re-centres it. Remember the geometry
+  // next to the app's other device-local preferences and reopen with it; the
+  // first launch (no saved state) opens maximised, which is also what a saved
+  // maximised state restores to. Only the main window is tracked: `primary`
+  // distinguishes it from the welcome, policy and overlay windows.
+  const desktopWindowStateHelpers = `
+// Local: reopen the main window at the geometry it last closed with. Bounds come
+// from the window's normal (unmaximised) frame, so unmaximising after a restore
+// returns to a sane size, and a monitor change cannot strand the window fully
+// off-screen. userData already holds the app's device-local preferences.
+const DESKTOP_WINDOW_STATE_FILE = () => join(app.getPath('userData'), 'desktop-window-state.json');
+function readDesktopWindowState() {
+\ttry { return JSON.parse(readFileSync(DESKTOP_WINDOW_STATE_FILE(), 'utf8')); } catch { return undefined; }
+}
+function desktopWindowGeometry(primary) {
+\tif (!primary) return {};
+\ttry {
+\t\tconst saved = readDesktopWindowState();
+\t\tif (saved === undefined || !(saved.width > 0) || !(saved.height > 0)) return {};
+\t\tconst width = Math.round(saved.width);
+\t\tconst height = Math.round(saved.height);
+\t\tconst wanted = { x: Math.round(saved.x) || 0, y: Math.round(saved.y) || 0, width, height };
+\t\tconst area = createRequire(import.meta.url)('electron').screen.getDisplayMatching(wanted).workArea;
+\t\treturn {
+\t\t\tx: Math.min(Math.max(wanted.x, area.x - width + 160), area.x + area.width - 160),
+\t\t\ty: Math.min(Math.max(wanted.y, area.y), area.y + area.height - 40),
+\t\t\twidth,
+\t\t\theight,
+\t\t};
+\t} catch { return {}; }
+}
+function initializeDesktopWindowState(window) {
+\tconst save = () => {
+\t\ttry {
+\t\t\tconst bounds = window.getNormalBounds();
+\t\t\twriteFileSync(DESKTOP_WINDOW_STATE_FILE(), JSON.stringify({
+\t\t\t\tx: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, maximized: window.isMaximized(),
+\t\t\t}));
+\t\t} catch { /* geometry is only a preference; never block the window */ }
+\t};
+\tlet pending;
+\tconst schedule = () => { clearTimeout(pending); pending = setTimeout(save, 500); };
+\twindow.on('resize', schedule);
+\twindow.on('move', schedule);
+\twindow.on('maximize', save);
+\twindow.on('unmaximize', save);
+\twindow.on('close', save);
+\tconst saved = readDesktopWindowState();
+\tif (saved === undefined || saved.maximized === true) {
+\t\twindow.once('show', () => { if (!window.isDestroyed()) window.maximize(); });
+\t}
+}
+`
+  replaceRequired(
+    mainBundle,
+    'function createWindow(preload, show = false, primary = false) {\n\tconst window = new BrowserWindow({\n\t\twidth: 1280,\n\t\theight: 820,',
+    `${desktopWindowStateHelpers}function createWindow(preload, show = false, primary = false) {\n\tconst window = new BrowserWindow({\n\t\twidth: 1280,\n\t\theight: 820,\n\t\t...desktopWindowGeometry(primary),`,
+    1,
+  )
+  replaceRequired(
+    mainBundle,
+    'const window = createWindow(appPreload, false, true);\n\t\tmainWindow = window;',
+    'const window = createWindow(appPreload, false, true);\n\t\tinitializeDesktopWindowState(window);\n\t\tmainWindow = window;',
     1,
   )
 }
