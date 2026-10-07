@@ -466,10 +466,36 @@ const SIDEBAR_LAYOUT_THEME = `<style id="deepseek-sidebar-layout-theme">
 [class*="sidebarCol"] [class*="logoRow"] { display: none !important; }
 [class*="sidebarCol"] button[class*="newSession"] {
   height: 32px !important;
-  padding: 5px 12px !important;
+  padding: 5px 12px 5px 6px !important;
   margin-bottom: 8px !important;
   border-radius: 10px !important;
   line-height: 18px !important;
+}
+[class*="sidebarCol"] button[class*="newSession"] svg {
+  width: 16px !important;
+  height: 16px !important;
+  flex: none !important;
+}
+[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"] {
+  justify-content: flex-start !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"]:hover {
+  background: var(--dsw-alias-interactive-bg-hover) !important;
+  border-color: var(--dsw-alias-border-l3) !important;
+}
+[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"] [class*="newSessionLabelMask"] {
+  text-align: left !important;
+}
+[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"] [class*="newSessionContent"] {
+  justify-content: flex-start !important;
+}
+[class*="sidebarCol"] [class*="sectionLabel"] {
+  margin-left: 4px !important;
+}
+[role="treeitem"][data-row-key^="session:"] {
+  padding-left: 10px !important;
 }
 [class*="sidebarCol"] [class*="panelList"] {
   position: absolute !important;
