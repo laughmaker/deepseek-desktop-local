@@ -464,33 +464,10 @@ body[data-ds-dark-theme] [class*="sidebarCol"] {
 const SIDEBAR_LAYOUT_THEME = `<style id="deepseek-sidebar-layout-theme">
 [class*="sidebarCol"] [class*="_root"] { position: relative !important; }
 [class*="sidebarCol"] [class*="logoRow"] { display: none !important; }
-[class*="sidebarCol"] button[class*="newSession"] {
-  height: 32px !important;
-  padding: 5px 12px 5px 6px !important;
-  margin-bottom: 8px !important;
-  border-radius: 10px !important;
-  line-height: 18px !important;
-}
-[class*="sidebarCol"] button[class*="newSession"] svg {
-  width: 16px !important;
-  height: 16px !important;
-  flex: none !important;
-}
-[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"] {
-  justify-content: flex-start !important;
-  background: transparent !important;
-  border-color: transparent !important;
-}
-[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"]:hover {
-  background: var(--dsw-alias-interactive-bg-hover) !important;
-  border-color: var(--dsw-alias-border-l3) !important;
-}
-[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"] [class*="newSessionLabelMask"] {
-  text-align: left !important;
-}
-[class*="sidebarCol"] [class*="_root"]:not([class*="collapsed"]) button[class*="newSession"] [class*="newSessionContent"] {
-  justify-content: flex-start !important;
-}
+/* New Session bar removed by local preference: hides it in both the expanded
+   sidebar and the collapsed rail. Sessions are still created with the app's
+   own Cmd+N shortcut (and the per-workspace + hover control). */
+[class*="sidebarCol"] button[class*="newSession"] { display: none !important; }
 [class*="sidebarCol"] [class*="sectionLabel"] {
   margin-left: 4px !important;
 }
@@ -559,9 +536,16 @@ function patchBuiltBrandingAndScale(): void {
   }
 
   const themeClient = join(repositoryRoot, 'packages', 'client', 'ui-theme', 'lib', 'client.js')
-  replaceRequired(themeClient, 'fontSize: 14,', 'fontSize: 12,', 1, 'fontSize: 13,')
-  replaceRequired(themeClient, 'return 14;', 'return 12;', 1, 'return 13;')
-  replaceRequired(themeClient, ': 14;', ': 12;', 1, ': 13;')
+  // dsh-v0.2.1 moved the conversation font defaults out of index.ts and into
+  // FONT_SIZE_SPECS in settings-store.ts, so the three former `14` anchors
+  // (fontSize:, return, and the schema default) collapse into one: the text
+  // role's default. `code` (11) and `terminal` (13) keep their own defaults.
+  replaceRequired(
+    themeClient,
+    '\t\t\t\tvariable: "--dsh-content-font-size",\n\t\t\t\tmin: 10,\n\t\t\t\tmax: 22,\n\t\t\t\tdefault: 14',
+    '\t\t\t\tvariable: "--dsh-content-font-size",\n\t\t\t\tmin: 10,\n\t\t\t\tmax: 22,\n\t\t\t\tdefault: 12',
+    1,
+  )
   replaceRequired(
     join(repositoryRoot, 'packages', 'client', 'ui-theme', 'lib', 'types', 'theme-settings.js'),
     'DEFAULT_FONT_SIZE = 14;', 'DEFAULT_FONT_SIZE = 12;', 1, 'DEFAULT_FONT_SIZE = 13;',
