@@ -775,6 +775,11 @@ function initializeDesktopWindowState(window) {
     'function createWindow(preload, show = false, primary = false) {\n\tconst window = new BrowserWindow({\n\t\twidth: 1280,\n\t\theight: 820,',
     `${desktopWindowStateHelpers}function createWindow(preload, show = false, primary = false) {\n\tconst window = new BrowserWindow({\n\t\twidth: 1280,\n\t\theight: 820,\n\t\t...desktopWindowGeometry(primary),`,
     1,
+    // `before` is a prefix of the patched text, so without an explicit prior
+    // form every rerun matched it again and prepended another helper block,
+    // eventually redeclaring DESKTOP_WINDOW_STATE_FILE and failing the whole
+    // bundle to load. Naming the patched call makes a rerun a no-op.
+    `${desktopWindowStateHelpers}function createWindow(preload, show = false, primary = false) {\n\tconst window = new BrowserWindow({\n\t\twidth: 1280,\n\t\theight: 820,\n\t\t...desktopWindowGeometry(primary),`,
   )
   replaceRequired(
     mainBundle,
