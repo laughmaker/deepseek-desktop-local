@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -514,7 +514,10 @@ function replaceRequired(path: string, before: string, after: string, expected: 
   const previousCount = previous === undefined ? 0 : source.split(previous).length - 1
   const afterCount = source.split(after).length - 1
   if (beforeCount === 0 && previousCount === 0 && afterCount === expected) return
-  const from = beforeCount === expected ? before : previousCount === expected ? previous : undefined
+  // Check the prior patch first. `before` is often a prefix of `after` — a run that
+  // already matched still reports one `before` inside the patched text — so testing
+  // `before` first would re-apply the substitution on every rerun.
+  const from = previousCount === expected ? previous : beforeCount === expected ? before : undefined
   if (from === undefined) {
     throw new Error(`${path}: expected ${expected} instance(s) of ${JSON.stringify(before)} or its prior patch, found ${beforeCount} and ${previousCount}`)
   }
@@ -734,45 +737,45 @@ function patchBuiltBrandingAndScale(): void {
 // off-screen. userData already holds the app's device-local preferences.
 const DESKTOP_WINDOW_STATE_FILE = () => join(app.getPath('userData'), 'desktop-window-state.json');
 function readDesktopWindowState() {
-\ttry { return JSON.parse(readFileSync(DESKTOP_WINDOW_STATE_FILE(), 'utf8')); } catch { return undefined; }
+	try { return JSON.parse(readFileSync(DESKTOP_WINDOW_STATE_FILE(), 'utf8')); } catch { return undefined; }
 }
 function desktopWindowGeometry(primary) {
-\tif (!primary) return {};
-\ttry {
-\t\tconst saved = readDesktopWindowState();
-\t\tif (saved === undefined || !(saved.width > 0) || !(saved.height > 0)) return {};
-\t\tconst width = Math.round(saved.width);
-\t\tconst height = Math.round(saved.height);
-\t\tconst wanted = { x: Math.round(saved.x) || 0, y: Math.round(saved.y) || 0, width, height };
-\t\tconst area = createRequire(import.meta.url)('electron').screen.getDisplayMatching(wanted).workArea;
-\t\treturn {
-\t\t\tx: Math.min(Math.max(wanted.x, area.x - width + 160), area.x + area.width - 160),
-\t\t\ty: Math.min(Math.max(wanted.y, area.y), area.y + area.height - 40),
-\t\t\twidth,
-\t\t\theight,
-\t\t};
-\t} catch { return {}; }
+	if (!primary) return {};
+	try {
+		const saved = readDesktopWindowState();
+		if (saved === undefined || !(saved.width > 0) || !(saved.height > 0)) return {};
+		const width = Math.round(saved.width);
+		const height = Math.round(saved.height);
+		const wanted = { x: Math.round(saved.x) || 0, y: Math.round(saved.y) || 0, width, height };
+		const area = createRequire(import.meta.url)('electron').screen.getDisplayMatching(wanted).workArea;
+		return {
+			x: Math.min(Math.max(wanted.x, area.x - width + 160), area.x + area.width - 160),
+			y: Math.min(Math.max(wanted.y, area.y), area.y + area.height - 40),
+			width,
+			height,
+		};
+	} catch { return {}; }
 }
 function initializeDesktopWindowState(window) {
-\tconst save = () => {
-\t\ttry {
-\t\t\tconst bounds = window.getNormalBounds();
-\t\t\twriteFileSync(DESKTOP_WINDOW_STATE_FILE(), JSON.stringify({
-\t\t\t\tx: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, maximized: window.isMaximized(),
-\t\t\t}));
-\t\t} catch { /* geometry is only a preference; never block the window */ }
-\t};
-\tlet pending;
-\tconst schedule = () => { clearTimeout(pending); pending = setTimeout(save, 500); };
-\twindow.on('resize', schedule);
-\twindow.on('move', schedule);
-\twindow.on('maximize', save);
-\twindow.on('unmaximize', save);
-\twindow.on('close', save);
-\tconst saved = readDesktopWindowState();
-\tif (saved === undefined || saved.maximized === true) {
-\t\twindow.once('show', () => { if (!window.isDestroyed()) window.maximize(); });
-\t}
+	const save = () => {
+		try {
+			const bounds = window.getNormalBounds();
+			writeFileSync(DESKTOP_WINDOW_STATE_FILE(), JSON.stringify({
+				x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, maximized: window.isMaximized(),
+			}));
+		} catch { /* geometry is only a preference; never block the window */ }
+	};
+	let pending;
+	const schedule = () => { clearTimeout(pending); pending = setTimeout(save, 500); };
+	window.on('resize', schedule);
+	window.on('move', schedule);
+	window.on('maximize', save);
+	window.on('unmaximize', save);
+	window.on('close', save);
+	const saved = readDesktopWindowState();
+	if (saved === undefined || saved.maximized === true) {
+		window.once('show', () => { if (!window.isDestroyed()) window.maximize(); });
+	}
 }
 `
   replaceRequired(
@@ -811,6 +814,81 @@ function createIcon(iconPath: string, outputPath: string): void {
   }
   run('/usr/bin/iconutil', ['-c', 'icns', iconset, '-o', outputPath])
   rmSync(iconset, { recursive: true, force: true })
+}
+
+/**
+ * Repair the shared profile tree after an upgrade.
+ *
+ * The Desktop host loads out-of-tree plugins from `~/.dsh/profiles/<name>/node_modules`,
+ * and the profile manifest pins each of them to an exact release. Two things break when
+ * the checkout moves to a new release without those being rewritten:
+ *
+ * - a manifest row still naming the previous release is refused by the compatibility
+ *   preflight, which disables the plugin row and can stop the host outright;
+ * - every entry in the profile's `node_modules` is a symlink into the app bundle that
+ *   owned it when the tree was created. That bundle is gone after a reinstall, so all
+ *   of them dangle and the profile resolves nothing.
+ *
+ * Upstream reads these links as pointing outside the profiles tree
+ * (`linkedProfileRoots` in `app-boot/src/profile.ts`), which is what repointing them at
+ * the development project satisfies. Versions are rewritten to the release being
+ * installed rather than tracked here, so this stays correct on future upgrades.
+ */
+function repairProfileTree(releaseVersion: string): void {
+  const profilesDirectory = join(dshHome, 'profiles')
+  if (!existsSync(profilesDirectory)) return
+  const projectModules = join(buildRoot, 'project', 'node_modules')
+
+  for (const entry of readdirSync(profilesDirectory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === 'node_modules') continue
+    const profileDirectory = join(profilesDirectory, entry.name)
+    const manifestPath = join(profileDirectory, 'package.json')
+    if (!existsSync(manifestPath)) continue
+
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+    let rewroteVersions = false
+    for (const [name, recorded] of Object.entries(manifest.dependencies ?? {})) {
+      // Exact releases only. A range, tag or local path is the user's own choice and
+      // is left exactly as written.
+      if (!/^\d+\.\d+\.\d+/.test(recorded) || recorded === releaseVersion) continue
+      manifest.dependencies![name] = releaseVersion
+      rewroteVersions = true
+    }
+    if (rewroteVersions) {
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
+      console.log(`Pinned ${entry.name} profile plugins to ${releaseVersion}`)
+    }
+
+    const modules = join(profileDirectory, 'node_modules')
+    if (!existsSync(modules)) continue
+    for (const scopeOrName of readdirSync(modules)) {
+      const candidates = scopeOrName.startsWith('@')
+        ? readdirSync(join(modules, scopeOrName)).map(name => join(scopeOrName, name))
+        : [scopeOrName]
+      for (const relativeName of candidates) {
+        const link = join(modules, relativeName)
+        let isLink = false
+        try {
+          isLink = lstatSync(link).isSymbolicLink()
+        } catch (error) {
+          // A concurrent removal is not this install's business.
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          continue
+        }
+        if (!isLink || existsSync(link)) continue
+        const target = join(projectModules, relativeName)
+        if (!existsSync(join(target, 'package.json'))) {
+          // Retired upstream and absent from this release; nothing to point at.
+          rmSync(link, { force: true })
+          continue
+        }
+        rmSync(link, { force: true })
+        symlinkSync(realpathSync(target), link, 'dir')
+      }
+    }
+  }
 }
 
 function installBundle(): void {
@@ -916,6 +994,7 @@ async function main(): Promise<void> {
     release,
     target: resolveDesktopBuildTarget(),
   })
+  repairProfileTree(version)
   await preparePrimaryRuntime()
 
   prepareDevelopmentApp({
