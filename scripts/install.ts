@@ -479,6 +479,11 @@ const SIDEBAR_LAYOUT_THEME = `<style id="deepseek-sidebar-layout-theme">
   right: 12px !important;
   bottom: 14px !important;
   z-index: 5;
+  /* Upstream stacks the Plugins and Automation icons in a column. A row keeps
+     both reachable on one line beside the account name instead. */
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
   gap: 0 !important;
   margin: 0 !important;
 }
